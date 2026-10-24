@@ -6,8 +6,10 @@ import PlayerBar from "./components/PlayerBar";
 import ParticleBackground from "./components/ParticleBackground";
 import LandingPage from "./pages/LandingPage";
 import HistoryPage from "./pages/HistoryPage";
+import LoginPage from "./pages/LoginPage";
 import { usePlaylist } from "./hooks/usePlaylist";
 import { usePlayer } from "./hooks/usePlayer";
+import { useAuth } from "./hooks/useAuth";
 
 /**
  * App Component:
@@ -15,8 +17,11 @@ import { usePlayer } from "./hooks/usePlayer";
  * Decouples views using centralized conditional pipelines while managing global state.
  */
 export default function App() {
-  // View Router State: landing | app | history
+  // View Router State: landing | app | history | login
   const [page, setPage] = useState("landing");
+
+  // Authentication state (user is null when logged out)
+  const { user, logout } = useAuth();
 
   // Custom Hooks decoupling API-driven calculations from player runtimes
   const { status, analysis, tracks, error, theme, history, generate, loadFromHistory } = usePlaylist();
@@ -39,7 +44,7 @@ export default function App() {
 
       {/* Layer 2: Main Layout Interactive Workspace */}
       <div style={{
-        position: "relative", 
+        position: "relative",
         zIndex: 1,
         opacity: 1,
         transition: "opacity 0.3s ease",
@@ -49,22 +54,43 @@ export default function App() {
           <LandingPage onEnter={() => setPage("app")} />
         )}
 
+        {page === "login" && (
+          <LoginPage onSuccess={() => setPage("app")} onBack={() => setPage("app")} />
+        )}
+
         {page === "history" && (
-          <HistoryPage 
-            history={history} 
-            onLoad={handleLoadHistory} 
-            onBack={() => setPage("app")} 
+          <HistoryPage
+            history={history}
+            onLoad={handleLoadHistory}
+            onBack={() => setPage("app")}
           />
         )}
 
         {page === "app" && (
           <div style={{ maxWidth: 620, margin: "0 auto", padding: "60px 1rem 120px" }}>
             {/* Context Workspace Navigation Action Row */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 48 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 48, gap: 8, flexWrap: "wrap" }}>
               <button onClick={() => setPage("landing")} style={{ background: "transparent", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 13, fontFamily: "'DM Sans', sans-serif", padding: 0 }}>← Home</button>
-              <button onClick={() => setPage("history")} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans', sans-serif", padding: "6px 16px", borderRadius: 999 }}>
-                History ({history.length})
-              </button>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {/* Auth control: login button for guests, name + logout for users */}
+                {user ? (
+                  <>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>Hi, {user.name}</span>
+                    <button onClick={logout} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans', sans-serif", padding: "6px 16px", borderRadius: 999 }}>
+                      Log out
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => setPage("login")} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans', sans-serif", padding: "6px 16px", borderRadius: 999 }}>
+                    Log in
+                  </button>
+                )}
+
+                <button onClick={() => setPage("history")} style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--muted)", cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans', sans-serif", padding: "6px 16px", borderRadius: 999 }}>
+                  History ({history.length})
+                </button>
+              </div>
             </div>
 
             {/* Typography Header Block */}
@@ -102,12 +128,12 @@ export default function App() {
       </div>
 
       {/* Layer 3: Sticky Global Audio Streaming Playback Media Controller */}
-      <PlayerBar 
-        track={current} 
-        playing={playing} 
-        onToggle={() => play(current)} 
-        onStop={stop} 
-        theme={theme} 
+      <PlayerBar
+        track={current}
+        playing={playing}
+        onToggle={() => play(current)}
+        onStop={stop}
+        theme={theme}
       />
     </>
   );

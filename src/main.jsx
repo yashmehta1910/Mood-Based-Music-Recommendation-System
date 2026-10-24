@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.jsx';
+import { AuthProvider } from './hooks/useAuth.jsx';
 
 /**
  * Root Execution Entry Point:
@@ -10,10 +11,13 @@ import App from './App.jsx';
  */
 createRoot(document.getElementById('root')).render(
   /* StrictMode runtime check wrap:
-    Orchestrates development checks, flagging double-rendering lifecycles, 
+    Orchestrates development checks, flagging double-rendering lifecycles,
     memory allocation leaks, and legacy dependency practices.
   */
   <StrictMode>
-    <App />
+    {/* AuthProvider: makes the logged-in user available to every component */}
+    <AuthProvider>
+      <App />
+    </AuthProvider>
   </StrictMode>,
 );

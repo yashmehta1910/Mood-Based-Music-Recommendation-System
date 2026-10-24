@@ -1,12 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { analyzeMood } from "../api/grok";
 import { getTracksByTag } from "../api/lastfm";
 import { extractColor } from "../utils/colorExtract";
+import { useAuth } from "./useAuth";
+import { savePlaylist, fetchPlaylists } from "../api/auth";
 
 /**
- * Local Storage Utility: Synchronously reads historical context caches 
+ * Local Storage Utility: Synchronously reads historical context caches
  * from the browser client session to preserve user activity.
- * 
+ * Used for guests (not logged in).
+ *
  * @returns {Array} List of historical playlist entry objects.
  */
 function loadHistory() {
@@ -20,7 +23,7 @@ function loadHistory() {
 /**
  * Local Storage Utility: Commits new records to history while capping the
  * maximum cached footprint to optimize browser storage overhead.
- * 
+ *
  * @param {Object} entry - Generated metadata snapshot object to preserve.
  */
 function saveHistory(entry) {
@@ -31,11 +34,33 @@ function saveHistory(entry) {
 }
 
 /**
+ * Converts a playlist document from MongoDB into the history entry shape
+ * the rest of the UI already expects (id instead of _id).
+ */
+function toEntry(p) {
+  return {
+    id: p._id,
+    text: p.text,
+    mood: p.mood,
+    summary: p.summary,
+    tracks: p.tracks || [],
+    color: p.color,
+    createdAt: p.createdAt,
+  };
+}
+
+/**
  * Custom React Hook orchestrating the complete full-stack JavaScript integration pipeline.
  * Aggregates text metrics, AI prompt completion engines, third-party media endpoints,
  * canvas image data analysis, dynamic DOM theme generation, and persistence states.
+ *
+ * Persistence: logged-in users -> MongoDB (via the Express server);
+ *              guests          -> browser localStorage.
  */
 export function usePlaylist() {
+  const { user } = useAuth();
+  const userId = user?.id;
+
   const [status, setStatus] = useState("idle"); // UI Pipeline Stages: idle | loading | done | error
   const [analysis, setAnalysis] = useState(null);
   const [tracks, setTracks] = useState([]);
@@ -43,10 +68,25 @@ export function usePlaylist() {
   const [theme, setTheme] = useState({ r: 201, g: 168, b: 76 });
   const [history, setHistory] = useState(loadHistory);
 
+  // Reload history whenever the user logs in or out:
+  // logged in -> from the database, logged out -> from localStorage.
+  useEffect(() => {
+    let cancelled = false;
+    const load = userId
+      ? fetchPlaylists().then((data) => data.playlists.map(toEntry))
+      : Promise.resolve(loadHistory());
+
+    load
+      .then((list) => { if (!cancelled) setHistory(list); })
+      .catch((e) => console.error("Could not load history:", e));
+
+    return () => { cancelled = true; };
+  }, [userId]);
+
   /**
    * Coordinates the asynchronous pipeline to convert natural text inputs
    * into a fully stylized UI theme and verified music playlist.
-   * 
+   *
    * @param {string} text - The input sentiment description string.
    */
   async function generate(text) {
@@ -78,7 +118,7 @@ export function usePlaylist() {
       document.documentElement.style.setProperty("--theme-b", color.b);
       document.documentElement.style.setProperty("--accent", `rgb(${color.r},${color.g},${color.b})`);
 
-      // Phase 5: Build compilation transaction entry and serialize data to persistent cache storage
+      // Phase 5: Build compilation transaction entry and persist it
       const entry = {
         id: Date.now(),
         text,
@@ -88,9 +128,28 @@ export function usePlaylist() {
         color,
         createdAt: new Date().toISOString(),
       };
-      saveHistory(entry);
-      setHistory(loadHistory());
-      
+
+      if (userId) {
+        // Logged in: save to MongoDB. A failed save must not break the playlist view.
+        try {
+          const { playlist } = await savePlaylist({
+            text,
+            mood: entry.mood,
+            summary: entry.summary,
+            color,
+            tracks: songList,
+          });
+          setHistory((prev) => [toEntry(playlist), ...prev].slice(0, 50));
+        } catch (saveErr) {
+          console.error("Could not save playlist to your account:", saveErr);
+          setHistory((prev) => [entry, ...prev]);
+        }
+      } else {
+        // Guest: keep using localStorage
+        saveHistory(entry);
+        setHistory(loadHistory());
+      }
+
       setStatus("done");
     } catch (e) {
       console.error("Pipeline Exception Catch Block:", e);
@@ -102,10 +161,12 @@ export function usePlaylist() {
   /**
    * Re-hydrates global frontend layout nodes instantly using a historically cached snapshot.
    * Eliminates unnecessary API token burn and network overhead.
-   * 
+   *
    * @param {Object} entry - The historical database configuration object.
    */
   function loadFromHistory(entry) {
+    const color = entry.color || { r: 201, g: 168, b: 76 };
+
     setAnalysis({
       mood: entry.mood,
       summary: entry.summary,
@@ -114,11 +175,11 @@ export function usePlaylist() {
       tags: [],
     });
     setTracks(entry.tracks);
-    setTheme(entry.color);
-    
+    setTheme(color);
+
     document.documentElement.style.setProperty(
-      "--accent", 
-      `rgb(${entry.color.r},${entry.color.g},${entry.color.b})`
+      "--accent",
+      `rgb(${color.r},${color.g},${color.b})`
     );
     setStatus("done");
   }
